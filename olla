@@ -1,0 +1,328 @@
+#include "WiFiS3.h
+
+//password e nome wifi
+char ssid[] = "iPhone19 Pro Max";
+char pass[] = "12345678";
+
+// Server Web
+WiFiServer server(80);
+
+// Dati giocatori
+String nomeG1 = "Giocatore 1";
+String valoreG1 = "";
+String nomeG2 = "Giocatore 2";
+String valoreG2 = "";
+
+// --- LISTA DOMANDE E RISPOSTE CORRETTE ---
+String domande[] = {
+  "in che anno è caduto il muro di berlino", 2
+  "in quale battaglia fu definitivamente sconfitto Napoleone", 2
+  "qual'è la montagna più alta del pianeta", 1
+  "chi è l'autore del quadro Guernica", 2 
+  "come si chiama il primo presidente degli stati uniti", 2
+  "chi è il regista di Pulp fiction", 2
+  "chi fu il leader della rivoluzione russa nel 1917", 2
+  "qualè la valuta ufficiale della svizzera", 1
+  "qyale pianeta del sistema solare ha il giorno più corto", 2
+  "qual è la velocità della luce", 2
+  "Qual'e' la radice di 121?", 0
+  "Numero piu' grande con 3 cifre?", 0
+  "Quanto fa 6-12?", 0
+  "Qual e' la capitale d'Italia?", 0
+  "Qual  il fiume più lungo d'Italia", 0
+  "Quanti sono i colori dell'arcobaleno", 2
+  "Ogni quanto si svolgono i giochi olimpici", 0
+  "Qual'e la capitale del'australia", 1
+  "Qual è la linea che divide gli emisferi", 0
+  "qual è il Paese più popoloso del mondo", 1
+  "quale fiume passa per Londra", 0
+  "quando è iniziata la prima guerra mondiale", 0
+  "che popolo costruì le piramidi di Giza", 0
+  "quando avvenne lo sbarco sulla luna", 1
+  "chi inventò la scrittura", 0
+  "chi scoprì la gravità (cognome)", 1
+  "quale pianeta viene definito rosso", 0
+  "autore promessi sposi", 0
+  "autrice harry potter", 1
+  "chi scrisse il poema sul ritorno di Ulisse", 0
+  "chi dipinse la gioconda", 1
+  "stelle bandiera USA", 1
+  "Sport con la palla ovale", 0
+  "CEO di Tesla (cognome)", 0
+  "capitale Portogallo", 0
+  "stato più piccolo del mondo", 0
+  "catena montuosa che separa la spagna dalla francia", 1
+  "quanti sono stati i re di roma", 1
+  "chi è il miglior amico di topolino", 1
+  "chi è il migliore amico di shreck", 0
+  "che animale è sid", 1
+  "quale film parla di un topo chef a parigi", 0
+  "come si chiama l'attore di mission impossible (nome e cognome)", 1
+  "come si chiama il maggiordomo i batman", 2
+  "quanti sono i film della saga Il Signore degli Anelli", 1
+  "che scuola frequenta Harry Potter", 0
+  "come si chiama la nave di Jack Sparrow", 2
+  "chi è il piccolo essere verde in Stars Wars", 1
+  "quanti minuti dura una partita di calcio", 0
+  "chi vinse il mondiale di calcio del 2006", 1
+  "in che città sorge la squadra Liverpool FC", 1
+  "qual è l'oceano più grande del mondo", 2
+  "quale stato ha la forma di uno stivale", 0
+  "quante zampe ha un ragno (cifra)", 2
+  "qual è l'animale terrestre più veloce", 2
+  "quale attore interpreta Iron Man", 1
+  "quale scultore ha realizzato il David", 2
+  "come si chiama il gioco da tavolo con re, regina e pedoni", 0
+  "chi è il creatore di topolino", 0
+  "qual è l'isola più grande del mondo", 2
+  "qual è la massima profondità delle fosse delle marianne", 2
+  
+
+String risposteCorrette[] = {
+  "1989",
+  "waterloo",
+  "everest",
+  "Picasso",
+  "Washinton",
+  "Tarantino",
+  "Lenin",
+  "franco svizzero",
+  "giove",
+  "300.000 km/s",
+  "11",
+  "999",
+  "-6",
+  "roma",
+  "po",
+  "7",
+  "4",
+  "Camberra",
+  "equatore",
+  "India",
+  "Tamigi",
+  "1914",
+  "egizi",
+  "1969",
+  "sumeri",
+  "newton",
+  "marte",
+  "manzoni",
+  "Rowling",
+  "omero",
+  "Da vinci",
+  "50",
+  "rugby",
+  "Musk",
+  "Lisbona",
+  "città del vaticano",
+  "7",
+  "pirenei",
+  "pluto",
+  "ciuchino",
+  "bradipo",
+  "ratatouille",
+  "Tom Cruise",
+  "alfred",
+  "3",
+  "Hogwarts",
+  "perla nera",
+  "yoda",
+  "90",
+  "Italia",
+  "Liverpool",
+  "Pacifico",
+  "Italia",
+  "8",
+  "ghepardo",
+  "Robert Downey Jr",
+  "michelangelo",
+  "scacchi",
+  "Walt disney",
+  "Groenlandia",
+  "11.000 m",
+  
+};
+
+int numeroDomande = sizeof(domande) / sizeof(domande[0]);
+
+// Stato del gioco
+int domandaCorrente = 0;
+bool domandaAttiva = true;
+
+void nuovaDomanda() {
+  domandaCorrente = random(0, numeroDomande);
+  domandaAttiva = true;
+  valoreG1 = "";
+  valoreG2 = "";
+
+  Serial.println("\n=== NUOVA DOMANDA ===");
+  Serial.println(domande[domandaCorrente]);
+  Serial.println("=====================\n");
+}
+
+void inviaPaginaGiocatore(WiFiClient &client, int g) {
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-type:text/html");
+  client.println("Connection: close");
+  client.println();
+
+  client.println("<html><body style='text-align:center;font-family:sans-serif;'>");
+  client.println("<h1>Gioco a Domande</h1>");
+  client.println("<h2>Domanda attuale:</h2>");
+  client.println("<h3>" + domande[domandaCorrente] + "</h3>");
+
+  if (g == 1) {
+    client.println("<h2 style='color:red;'>" + nomeG1 + "</h2>");
+    client.println("<form action='/' method='get'>Nome: <input type='text' name='n1'><input type='submit' value='OK'></form><br>");
+    client.println("<form action='/' method='get'>Risposta: <input type='text' name='v1'><input type='submit' value='INVIA'></form>");
+  }
+
+  if (g == 2) {
+    client.println("<h2 style='color:blue;'>" + nomeG2 + "</h2>");
+    client.println("<form action='/' method='get'>Nome: <input type='text' name='n2'><input type='submit' value='OK'></form><br>");
+    client.println("<form action='/' method='get'>Risposta: <input type='text' name='v2'><input type='submit' value='INVIA'></form>");
+  }
+
+  client.println("</body></html>");
+}
+
+void inviaPaginaHome(WiFiClient &client) {
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-type:text/html");
+  client.println("Connection: close");
+  client.println();
+
+  client.println("<html><body style='text-align:center;font-family:sans-serif;'>");
+  client.println("<h1>Benvenuto nel gioco</h1>");
+  client.println("<a href='/?g=1'>Giocatore 1</a><br><br>");
+  client.println("<a href='/?g=2'>Giocatore 2</a>");
+  client.println("</body></html>");
+}
+
+void controllaRisposta(String nome, String risposta) {
+  if (!domandaAttiva) return;
+
+  risposta.toLowerCase();   // CORRETTO per UNO R4 WiFi
+
+  if (risposta == risposteCorrette[domandaCorrente]) {
+
+    domandaAttiva = false;
+
+    Serial.println("====================================");
+    Serial.println(" RISPOSTA CORRETTA DI: " + nome);
+
+    delay(1000);
+    Serial.println("pronti a una nuova domanda?");
+    delay(1000);
+    Serial.print("3 ");
+    delay(500);
+    Serial.print("2 ");
+    delay(500);
+    Serial.println("1...");
+    delay(400);
+
+    nuovaDomanda();
+  }
+}
+
+
+void setup() {
+  Serial.begin(115200);
+  while (!Serial) {}
+
+  Serial.print("Connettendo a ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, pass);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(100);
+    Serial.print(".");
+  }
+
+  Serial.println("\n--- CONNESSO! ---");
+  Serial.print("Apri nel browser: http://");
+  Serial.println(WiFi.localIP());
+
+  randomSeed(analogRead(A0));
+
+  Serial.println("Avete 10 secondi per cambiare nome...");
+  delay(10000);
+
+  nuovaDomanda();
+  server.begin();
+}
+
+void loop() {
+  WiFiClient client = server.available();
+
+  if (client) {
+    String richiesta = "";
+
+    while (client.connected()) {
+      if (client.available()) {
+        char c = client.read();
+        richiesta += c;
+
+        if (c == '\n') {
+
+          // PAGINA G1
+          if (richiesta.indexOf("GET /?g=1") >= 0) {
+            inviaPaginaGiocatore(client, 1);
+            break;
+          }
+
+          // PAGINA G2
+          if (richiesta.indexOf("GET /?g=2") >= 0) {
+            inviaPaginaGiocatore(client, 2);
+            break;
+          }
+
+          // CAMBIO NOME G1
+          if (richiesta.indexOf("GET /?n1=") >= 0) {
+            int inizio = richiesta.indexOf("n1=") + 3;
+            int fine = richiesta.indexOf(' ', inizio);
+            nomeG1 = richiesta.substring(inizio, fine);
+            Serial.println("G1 cambia nome in: " + nomeG1);
+          }
+
+          // RISPOSTA G1
+          if (richiesta.indexOf("GET /?v1=") >= 0) {
+            int inizio = richiesta.indexOf("v1=") + 3;
+            int fine = richiesta.indexOf(' ', inizio);
+            valoreG1 = richiesta.substring(inizio, fine);
+            Serial.println(nomeG1 + " risponde: " + valoreG1);
+            controllaRisposta(nomeG1, valoreG1);
+          }
+
+          // CAMBIO NOME G2
+          if (richiesta.indexOf("GET /?n2=") >= 0) {
+            int inizio = richiesta.indexOf("n2=") + 3;
+            int fine = richiesta.indexOf(' ', inizio);
+            nomeG2 = richiesta.substring(inizio, fine);
+            Serial.println("G2 cambia nome in: " + nomeG2);
+          }
+
+          // RISPOSTA G2
+          if (richiesta.indexOf("GET /?v2=") >= 0) {
+            int inizio = richiesta.indexOf("v2=") + 3;
+            int fine = richiesta.indexOf(' ', inizio);
+            valoreG2 = richiesta.substring(inizio, fine);
+            Serial.println(nomeG2 + " risponde: " + valoreG2);
+            controllaRisposta(nomeG2, valoreG2);
+          }
+
+          // HOME PAGE
+          if (richiesta == "\r\n" || richiesta == "\n") {
+            inviaPaginaHome(client);
+            break;
+          }
+
+          richiesta = "";
+        }
+      }
+    }
+
+    delay(10);
+    client.stop();
+  }
+}
