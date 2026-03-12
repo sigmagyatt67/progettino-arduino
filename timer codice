@@ -1,0 +1,48 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// Indirizzo I2C (spesso 0x27 o 0x3F)
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+unsigned long tempoIniziale;
+unsigned long tempoAttuale;
+
+int secondi;
+int minuti;
+
+void setup() {
+  lcd.init();
+  lcd.backlight();
+
+  lcd.setCursor(0,0);
+  lcd.print("Timer Arduino");
+
+  delay(2000);
+  lcd.clear();
+
+  tempoIniziale = millis();
+}
+
+void loop() {
+
+  tempoAttuale = millis();
+  
+  unsigned long tempoPassato = tempoAttuale - tempoIniziale;
+
+  secondi = (tempoPassato / 1000) % 60;
+  minuti = (tempoPassato / 60000);
+
+  lcd.setCursor(0,0);
+  lcd.print("Tempo:");
+
+  lcd.setCursor(0,1);
+
+  if(minuti < 10) lcd.print("0");
+  lcd.print(minuti);
+  lcd.print(":");
+
+  if(secondi < 10) lcd.print("0");
+  lcd.print(secondi);
+
+  delay(200);
+}
