@@ -1,0 +1,107 @@
+#include "WiFiS3.h"
+
+char ssid[] = "iPhone19 Pro Max";
+char pass[] = "12345678";
+WiFiServer server(80);
+
+// Dati e Punteggi
+String nomeG1 = "Giocatore 1", valoreG1 = "";
+String nomeG2 = "Giocatore 2", valoreG2 = "";
+int puntiG1 = 0, puntiG2 = 0;
+
+// Gestione Tempo per punteggio stile Kahoot
+unsigned long tempoInizioDomanda;
+const int puntiBase = 500; // Punti minimi per risposta corretta
+const int bonusVelocita = 500; // Punti extra massimi per la velocità
+
+// --- DOMANDE E RISPOSTE (Assicurati che siano pari!) ---
+String domande[] = {"in che anno è caduto il muro di berlino", "qual è la capitale d'italia", "chi dipinse la gioconda"};
+String risposteCorrette[] = {"1989", "roma", "da vinci"};
+
+int numeroDomande = sizeof(domande) / sizeof(domande[0]);
+int domandaCorrente = 0;
+bool domandaAttiva = true;
+
+void nuovaDomanda() {
+  domandaCorrente = random(0, numeroDomande);
+  domandaAttiva = true;
+  tempoInizioDomanda = millis(); // Reset del timer
+  Serial.println("\n=== PROSSIMA DOMANDA ===");
+  Serial.println(domande[domandaCorrente]);
+}
+
+int calcolaPunteggio() {
+  unsigned long tempoImpiegato = (millis() - tempoInizioDomanda) / 1000;
+  // Più tempo passa, meno punti bonus ricevi (minimo 0 bonus dopo 10 secondi)
+  int bonus = bonusVelocita - (tempoImpiegato * 50); 
+  if (bonus < 0) bonus = 0;
+  return puntiBase + bonus;
+}
+
+void inviaPaginaGiocatore(WiFiClient &client, int g) {
+  client.println("HTTP/1.1 200 OK\nContent-type:text/html\n\n<html><body style='text-align:center; font-family:sans-serif;'>");
+  client.println("<h1>Kahoot Arduino!</h1>");
+  
+  // Mostra Classifica
+  client.print("<div style='background:#eee; padding:10px;'>");
+  client.print("<b>" + nomeG1 + ":</b> " + String(puntiG1) + " | ");
+  client.print("<b>" + nomeG2 + ":</b> " + String(puntiG2));
+  client.println("</div><hr>");
+
+  if (domandaAttiva) {
+    client.println("<h2>" + domande[domandaCorrente] + "</h2>");
+    String inputName = (g == 1) ? "v1" : "v2";
+    client.println("<form><input type='text' name='" + inputName + "' placeholder='Tua risposta...'>");
+    client.println("<input type='submit' value='INVIA'></form>");
+  } else {
+    client.println("<h2 style='color:orange;'>Attendi la prossima domanda...</h2>");
+    client.println("<script>setTimeout(function(){location.reload();}, 2000);</script>");
+  }
+  client.println("</body></html>");
+}
+
+void controllaRisposta(int giocatore, String risposta) {
+  if (!domandaAttiva) return;
+  risposta.toLowerCase();
+  
+  if (risposta == risposteCorrette[domandaCorrente]) {
+    int puntiGuadagnati = calcolaPunteggio();
+    if (giocatore == 1) puntiG1 += puntiGuadagnati;
+    else puntiG2 += puntiGuadagnati;
+    
+    domandaAttiva = false;
+    Serial.println("Corretto! Punti assegnati: " + String(puntiGuadagnati));
+    delay(3000); // Pausa per mostrare il risultato
+    nuovaDomanda();
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, pass);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+  server.begin();
+  randomSeed(analogRead(0));
+  nuovaDomanda();
+}
+
+void loop() {
+  WiFiClient client = server.available();
+  if (client) {
+    String richiesta = client.readStringUntil('\r');
+    if (richiesta.indexOf("GET /?g=1") >= 0) inviaPaginaGiocatore(client, 1);
+    else if (richiesta.indexOf("GET /?g=2") >= 0) inviaPaginaGiocatore(client, 2);
+    else if (richiesta.indexOf("v1=") >= 0) {
+      String r = richiesta.substring(richiesta.indexOf("v1=") + 3, richiesta.indexOf(" ", richiesta.indexOf("v1=")));
+      controllaRisposta(1, r);
+      inviaPaginaGiocatore(client, 1);
+    } else if (richiesta.indexOf("v2=") >= 0) {
+      String r = richiesta.substring(richiesta.indexOf("v2=") + 3, richiesta.indexOf(" ", richiesta.indexOf("v2=")));
+      controllaRisposta(2, r);
+      inviaPaginaGiocatore(client, 2);
+    } else {
+      inviaPaginaGiocatore(client, 1); // Default
+    }
+    client.stop();
+  }
+}
