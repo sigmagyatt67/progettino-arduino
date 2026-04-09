@@ -1,0 +1,533 @@
+#include "WiFiS3.h"
+#include <LiquidCrystal.h>
+
+// --- WIFI ---
+char ssid[] = "iPhone19 Pro Max";
+char pass[] = "12345678";
+WiFiServer server(80);
+
+// LCD (RS, E, D4, D5, D6, D7)
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+
+struct Domanda {
+  const char* testo;
+  const char* risposta;
+  int difficolta;  // 1=facile, 2=media, 3=difficile
+};
+
+// --- DATABASE DOMANDE ---
+Domanda database[] = {
+  {"In che anno e' caduto il muro di Berlino?", "1989", 3},
+  {"In quale battaglia fu sconfitto Napoleone?", "waterloo", 3},
+  {"Qual e' la montagna piu' alta del pianeta?", "everest", 1},
+  {"Chi e' l'autore del quadro Guernica?", "picasso", 2},
+  {"Primo presidente degli Stati Uniti?", "washington", 2},
+  {"Chi e' il regista di Pulp Fiction?", "tarantino", 2},
+  {"Leader della rivoluzione russa 1917?", "lenin", 3},
+  {"Valuta della Svizzera?", "franco svizzero", 2},
+  {"Pianeta con il giorno piu' corto?", "giove", 3},
+  {"Velocita' della luce (km/s)?", "300000", 3},
+  {"Radice quadrata di 121?", "11", 1},
+  {"Numero piu' grande con 3 cifre?", "999", 1},
+  {"Quanto fa 6 meno 12?", "-6", 1},
+  {"Capitale d'Italia?", "roma", 1},
+  {"Fiume piu' lungo d'Italia?", "po", 1},
+  {"Colori dell'arcobaleno?", "7", 1},
+  {"Ogni quanto le Olimpiadi?", "4", 1},
+  {"Capitale dell'Australia?", "canberra", 3},
+  {"Linea che divide gli emisferi?", "equatore", 1},
+  {"Paese piu' popoloso?", "india", 2},
+  {"Fiume che passa per Londra?", "tamigi", 2},
+  {"Inizio prima guerra mondiale?", "1914", 3},
+  {"Chi costrui' le piramidi?", "egizi", 1},
+  {"Sbarco sulla luna?", "1969", 3},
+  {"Chi invento' la scrittura?", "sumeri", 3},
+  {"Chi scopri' la gravita'? (cognome)", "newton", 2},
+  {"Pianeta definito rosso?", "marte", 1},
+  {"Autore dei Promessi Sposi?", "manzoni", 1},
+  {"Autrice di Harry Potter?", "rowling", 1},
+  {"Ritorno di Ulisse?", "omero", 2},
+  {"Chi dipinse la Gioconda?", "da vinci", 1},
+  {"Stelle bandiera USA?", "50", 2},
+  {"Sport palla ovale?", "rugby", 1},
+  {"CEO di Tesla?", "musk", 1},
+  {"Capitale Portogallo?", "lisbona", 2},
+  {"Stato piu' piccolo al mondo?", "vaticano", 2},
+  {"Quanti re di Roma?", "7", 2},
+  {"Monti tra Spagna e Francia?", "pirenei", 3},
+  {"Amico di Topolino?", "pluto", 1},
+  {"Amico di Shrek?", "ciuchino", 1},
+  {"Animale Sid (Era Glaciale)?", "bradipo", 2},
+  {"Topo chef a Parigi?", "ratatouille", 1},
+  {"Attore Mission Impossible?", "tom cruise", 2},
+  {"Maggiordomo di Batman?", "alfred", 2},
+  {"Quanti film Sgn. Anelli?", "3", 2},
+  {"Scuola Harry Potter?", "hogwarts", 1},
+  {"Nave Jack Sparrow?", "perla nera", 2},
+  {"Piccolo verde Star Wars?", "yoda", 1},
+  {"Minuti partita di calcio?", "90", 1},
+  {"Vincitore mondiale 2006?", "italia", 1},
+  {"Citta' Liverpool FC?", "liverpool", 1},
+  {"Oceano piu' grande?", "pacifico", 2},
+  {"Stato a stivale?", "italia", 1},
+  {"Zampe ragno?", "8", 1},
+  {"Animale piu' veloce?", "ghepardo", 1},
+  {"Attore Iron Man?", "robert downey jr", 2},
+  {"Scultore del David?", "michelangelo", 2},
+  {"Gioco con re, regina e pedoni?", "scacchi", 1},
+  {"Creatore di Topolino?", "walt disney", 1},
+  {"Isola piu' grande?", "groenlandia", 3},
+  {"Profondita' Fossa Marianne?", "11000", 3}
+};
+const int numDomande = 61;
+
+// --- CONFIGURAZIONE PARTITA ---
+const int MAX_DOMANDE_PARTITA = 15;
+const unsigned long durataRisultati = 4000;  // 4s schermata risposta
+
+// Tempo in base alla difficoltà (in ms)
+unsigned long getDurataTurno(int difficolta) {
+  switch(difficolta) {
+    case 1: return 10000;  // 10s facile
+    case 2: return 15000;  // 15s media
+    case 3: return 20000;  // 20s difficile
+    default: return 15000;
+  }
+}
+
+// --- STATO ---
+int domandaCorrente = 0;
+int numeroDomanda = 0;  // Contatore domande fatte (0-14)
+int domandeGiaFatte[MAX_DOMANDE_PARTITA];  // Per evitare ripetizioni
+
+String nomeG1 = "G1", nomeG2 = "G2";
+int puntiG1 = 0, puntiG2 = 0;
+
+bool g1Pronto = false, g2Pronto = false;
+bool giocoAvviato = false;
+bool giocoTerminato = false;
+
+bool g1Risposto = false, g2Risposto = false;
+bool mostraRisultati = false;
+
+unsigned long inizioTurno = 0;
+unsigned long inizioRisultati = 0;
+unsigned long durataTurnoCorrente = 15000;
+
+// --- SELEZIONE DOMANDA CASUALE NON RIPETUTA ---
+int selezionaDomandaCasuale() {
+  int tentativo;
+  bool giaUsata;
+ 
+  do {
+    tentativo = random(0, numDomande);
+    giaUsata = false;
+    for (int i = 0; i < numeroDomanda; i++) {
+      if (domandeGiaFatte[i] == tentativo) {
+        giaUsata = true;
+        break;
+      }
+    }
+  } while (giaUsata && numeroDomanda < numDomande);
+ 
+  return tentativo;
+}
+
+// --- NUOVA DOMANDA ---
+void nuovaDomanda() {
+  // Controlla se il gioco è finito
+  if (numeroDomanda >= MAX_DOMANDE_PARTITA) {
+    giocoTerminato = true;
+    mostraRisultati = false;
+    return;
+  }
+ 
+  domandaCorrente = selezionaDomandaCasuale();
+  domandeGiaFatte[numeroDomanda] = domandaCorrente;
+  numeroDomanda++;
+ 
+  // Imposta durata in base alla difficoltà
+  durataTurnoCorrente = getDurataTurno(database[domandaCorrente].difficolta);
+ 
+  g1Risposto = false;
+  g2Risposto = false;
+  mostraRisultati = false;
+  inizioTurno = millis();
+ 
+  lcd.clear();
+}
+
+// --- CALCOLO PUNTI ---
+int calcolaPunti() {
+  int base = 400 + (database[domandaCorrente].difficolta * 100);
+  unsigned long tempoImpiegato = millis() - inizioTurno;
+  // Bonus proporzionale al tempo risparmiato
+  int bonus = (durataTurnoCorrente - tempoImpiegato) * 500 / durataTurnoCorrente;
+  return base + (bonus > 0 ? bonus : 0);
+}
+
+// --- RESET PARTITA ---
+void resetPartita() {
+  numeroDomanda = 0;
+  puntiG1 = 0;
+  puntiG2 = 0;
+  g1Pronto = false;
+  g2Pronto = false;
+  giocoAvviato = false;
+  giocoTerminato = false;
+  g1Risposto = false;
+  g2Risposto = false;
+  mostraRisultati = false;
+}
+
+// --- SETUP ---
+void setup() {
+  Serial.begin(115200);
+  lcd.begin(16, 2);
+  lcd.print("WiFi Loading...");
+  delay(1500);
+
+  WiFi.begin(ssid, pass);
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Connessione in corso...");
+    delay(500);
+  }
+
+  server.begin();
+  randomSeed(analogRead(0));
+
+  Serial.print("Indirizzo IP per giocare: ");
+  Serial.println(WiFi.localIP());
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("IP:");
+  lcd.setCursor(0, 1);
+  lcd.print(WiFi.localIP());
+}
+
+// --- PAGINA WEB ---
+void inviaPagina(WiFiClient &client, int g) {
+  unsigned long elapsed = millis() - inizioTurno;
+  unsigned long remaining = (durataTurnoCorrente > elapsed) ? (durataTurnoCorrente - elapsed) : 0;
+  int sec = remaining / 1000;
+
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-type:text/html");
+  client.println("Connection: close");
+  client.println();
+
+  client.println("<!DOCTYPE html><html><head>");
+  client.println("<meta charset='UTF-8'>");
+  client.println("<meta name='viewport' content='width=device-width, initial-scale=1'>");
+
+  // CSS
+  client.println("<style>");
+  client.println("body{font-family:sans-serif; text-align:center; background:#121212; color:white; padding:20px; margin:0;}");
+  client.println(".card{background:#1e1e1e; padding:30px; border-radius:20px; border:2px solid #333; max-width:500px; margin:auto;}");
+  client.println(".btn{padding:15px 30px; background:#007bff; color:#fff; border-radius:10px; text-decoration:none; display:inline-block; margin-top:15px; font-size:18px; border:none; cursor:pointer;}");
+  client.println(".btn:hover{background:#0056b3;}");
+  client.println(".timer{font-size:48px; color:#ff4444; font-weight:bold;}");
+  client.println(".timer.warning{color:#ff8800; animation: pulse 0.5s infinite;}");
+  client.println(".timer.danger{color:#ff0000; animation: pulse 0.3s infinite;}");
+  client.println("@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.5;}}");
+  client.println(".progress{width:100%; height:20px; background:#333; border-radius:10px; overflow:hidden; margin:10px 0;}");
+  client.println(".progress-bar{height:100%; background:linear-gradient(90deg,#00ff00,#ffff00,#ff0000); transition:width 1s linear;}");
+  client.println(".score{font-size:24px; margin:10px 0;}");
+  client.println(".difficulty{padding:5px 15px; border-radius:15px; display:inline-block; margin:10px 0;}");
+  client.println(".diff-1{background:#4CAF50;}");
+  client.println(".diff-2{background:#FF9800;}");
+  client.println(".diff-3{background:#f44336;}");
+  client.println(".winner{color:#FFD700; font-size:32px; text-shadow:0 0 20px #FFD700;}");
+  client.println("input[type=text]{width:90%; padding:15px; font-size:18px; border-radius:10px; border:none; margin:10px 0;}");
+  client.println("</style>");
+
+  // JavaScript per timer sincronizzato
+  if (giocoAvviato && !mostraRisultati && !giocoTerminato) {
+    client.println("<script>");
+    client.println("let remaining=" + String(remaining) + ";");
+    client.println("let total=" + String(durataTurnoCorrente) + ";");
+    client.println("function updateTimer(){");
+    client.println("  remaining-=100;");
+    client.println("  if(remaining<=0){location.reload();return;}");
+    client.println("  let sec=Math.ceil(remaining/1000);");
+    client.println("  let el=document.getElementById('timer');");
+    client.println("  let bar=document.getElementById('progressBar');");
+    client.println("  if(el){");
+    client.println("    el.innerHTML=sec;");
+    client.println("    el.className='timer'+(sec<=5?' danger':(sec<=10?' warning':''));");
+    client.println("  }");
+    client.println("  if(bar){bar.style.width=(remaining/total*100)+'%';}");
+    client.println("}");
+    client.println("setInterval(updateTimer,100);");
+    client.println("</script>");
+  }
+
+  // Auto-refresh durante risultati
+  if (mostraRisultati && !giocoTerminato) {
+    client.println("<script>");
+    client.println("setTimeout(()=>{location.reload();},4000);");
+    client.println("</script>");
+  }
+
+  client.println("</head><body><div class='card'>");
+
+  bool haRisposto = (g == 1 ? g1Risposto : g2Risposto);
+
+  // --- SCHERMATA FINE GIOCO ---
+  if (giocoTerminato) {
+    client.println("<h1>🏆 PARTITA TERMINATA! 🏆</h1>");
+    client.println("<hr>");
+   
+    String vincitore;
+    if (puntiG1 > puntiG2) {
+      vincitore = nomeG1;
+      client.println("<p class='winner'>VINCE " + nomeG1 + "!</p>");
+    } else if (puntiG2 > puntiG1) {
+      vincitore = nomeG2;
+      client.println("<p class='winner'>VINCE " + nomeG2 + "!</p>");
+    } else {
+      client.println("<p class='winner'>PAREGGIO!</p>");
+    }
+   
+    client.println("<div class='score'>");
+    client.println("<p>" + nomeG1 + ": <strong>" + String(puntiG1) + "</strong> punti</p>");
+    client.println("<p>" + nomeG2 + ": <strong>" + String(puntiG2) + "</strong> punti</p>");
+    client.println("</div>");
+   
+    client.println("<a class='btn' href='/g" + String(g) + "?reset=1'>NUOVA PARTITA</a>");
+  }
+  // --- CONFIGURAZIONE INIZIALE ---
+  else if (!giocoAvviato) {
+    String nomeCorrente = (g == 1 ? nomeG1 : nomeG2);
+    bool pronto = (g == 1 ? g1Pronto : g2Pronto);
+   
+    client.println("<h1>👋 Benvenuto!</h1>");
+    client.println("<h2>Giocatore " + String(g) + ": " + nomeCorrente + "</h2>");
+   
+    client.println("<form method='GET'>");
+    client.println("<input type='text' name='n" + String(g) + "' placeholder='Inserisci il tuo nome'>");
+    client.println("<br><input type='submit' value='SALVA NOME' class='btn'>");
+    client.println("</form>");
+   
+    if (!pronto) {
+      client.println("<br><a class='btn' href='/g" + String(g) + "?p" + String(g) + "=1' style='background:#28a745;'>✓ SONO PRONTO</a>");
+    } else {
+      client.println("<h3 style='color:#28a745;'>✓ Sei pronto!</h3>");
+      client.println("<p>Attendi l'avversario...</p>");
+    }
+   
+    // Stato avversario
+    bool avversarioPronto = (g == 1 ? g2Pronto : g1Pronto);
+    String nomeAvversario = (g == 1 ? nomeG2 : nomeG1);
+    if (avversarioPronto) {
+      client.println("<p style='color:#28a745;'>" + nomeAvversario + " è pronto!</p>");
+    }
+  }
+  // --- SCHERMATA RISULTATI ---
+  else if (mostraRisultati) {
+    client.println("<h1>⏱️ TEMPO SCADUTO!</h1>");
+    client.println("<h2>Risposta corretta:</h2>");
+    client.println("<h2 style='color:#ffc107; font-size:28px;'>" + String(database[domandaCorrente].risposta) + "</h2>");
+    client.println("<hr>");
+    client.println("<p>Domanda " + String(numeroDomanda) + "/" + String(MAX_DOMANDE_PARTITA) + "</p>");
+    client.println("<div class='score'>");
+    client.println("<p>" + nomeG1 + ": " + String(puntiG1) + " pts</p>");
+    client.println("<p>" + nomeG2 + ": " + String(puntiG2) + " pts</p>");
+    client.println("</div>");
+    client.println("<p style='color:#888;'>Prossima domanda tra pochi secondi...</p>");
+  }
+  // --- DOMANDA ATTIVA ---
+  else {
+    // Header con info partita
+    client.println("<p>Domanda " + String(numeroDomanda) + "/" + String(MAX_DOMANDE_PARTITA) + "</p>");
+   
+    // Difficoltà con colore
+    int diff = database[domandaCorrente].difficolta;
+    String diffLabel = (diff == 1 ? "FACILE" : (diff == 2 ? "MEDIA" : "DIFFICILE"));
+    client.println("<span class='difficulty diff-" + String(diff) + "'>" + diffLabel + "</span>");
+   
+    // Timer grande
+    client.println("<div class='timer' id='timer'>" + String(sec) + "</div>");
+   
+    // Barra progresso
+    int percentuale = (remaining * 100) / durataTurnoCorrente;
+    client.println("<div class='progress'><div class='progress-bar' id='progressBar' style='width:" + String(percentuale) + "%;'></div></div>");
+   
+    // Domanda
+    client.println("<h2 style='color:#00d4ff; margin:20px 0;'>" + String(database[domandaCorrente].testo) + "</h2>");
+
+    if (!haRisposto) {
+      client.println("<form method='GET'>");
+      client.println("<input type='text' name='v" + String(g) + "' placeholder='Scrivi la risposta...' autofocus autocomplete='off'>");
+      client.println("<br><input type='submit' value='INVIA RISPOSTA' class='btn'>");
+      client.println("</form>");
+    } else {
+      client.println("<h3 style='color:#28a745;'>✓ Risposta inviata!</h3>");
+      client.println("<p>Attendi la fine del tempo...</p>");
+    }
+   
+    // Punteggi in basso
+    client.println("<hr><p style='font-size:14px;'>" + nomeG1 + ": " + String(puntiG1) + " | " + nomeG2 + ": " + String(puntiG2) + "</p>");
+  }
+
+  client.println("</div></body></html>");
+}
+
+// --- LOOP ---
+void loop() {
+  // --- LCD UPDATE ---
+  if (giocoTerminato) {
+    lcd.setCursor(0, 0);
+    lcd.print("GIOCO FINITO!   ");
+    lcd.setCursor(0, 1);
+    if (puntiG1 > puntiG2) {
+      lcd.print(nomeG1.substring(0, 8) + " VINCE! ");
+    } else if (puntiG2 > puntiG1) {
+      lcd.print(nomeG2.substring(0, 8) + " VINCE! ");
+    } else {
+      lcd.print("PAREGGIO!       ");
+    }
+  }
+  else if (giocoAvviato && !mostraRisultati) {
+    unsigned long elapsed = millis() - inizioTurno;
+    unsigned long remaining = (durataTurnoCorrente > elapsed) ? (durataTurnoCorrente - elapsed) : 0;
+    int sec = remaining / 1000;
+
+    lcd.setCursor(0, 0);
+    lcd.print("Q");
+    lcd.print(numeroDomanda);
+    lcd.print("/");
+    lcd.print(MAX_DOMANDE_PARTITA);
+    lcd.print(" T:");
+    if (sec < 10) lcd.print(" ");
+    lcd.print(sec);
+    lcd.print("s  ");
+   
+    lcd.setCursor(0, 1);
+    lcd.print(nomeG1.substring(0, 4) + ":" + String(puntiG1));
+    lcd.print(" ");
+    lcd.print(nomeG2.substring(0, 4) + ":" + String(puntiG2));
+  }
+  else if (giocoAvviato && mostraRisultati) {
+    lcd.setCursor(0, 0);
+    lcd.print("   RISPOSTA:    ");
+    lcd.setCursor(0, 1);
+    String risp = database[domandaCorrente].risposta;
+    lcd.print(risp.substring(0, 16));
+  }
+  else {
+    lcd.setCursor(0, 0);
+    lcd.print("In attesa...    ");
+    lcd.setCursor(0, 1);
+    lcd.print("Connetti i tel. ");
+  }
+
+  // --- GESTIONE TRANSIZIONI ---
+  if (giocoAvviato && !mostraRisultati && !giocoTerminato) {
+    unsigned long elapsed = millis() - inizioTurno;
+    if (elapsed >= durataTurnoCorrente || (g1Risposto && g2Risposto)) {
+      mostraRisultati = true;
+      inizioRisultati = millis();
+    }
+  }
+
+  // Dopo 4s di risultati → nuova domanda
+  if (mostraRisultati && !giocoTerminato && (millis() - inizioRisultati >= durataRisultati)) {
+    nuovaDomanda();
+  }
+
+  // --- SERVER ---
+  WiFiClient client = server.available();
+  if (client) {
+    String req = client.readStringUntil('\r');
+    client.readStringUntil('\n');
+
+    // Reset partita
+    if (req.indexOf("reset=1") > 0) {
+      resetPartita();
+    }
+
+    // Nomi
+    int n1Pos = req.indexOf("n1=");
+    if (n1Pos > 0) {
+      int endPos = req.indexOf("&", n1Pos);
+      if (endPos < 0) endPos = req.indexOf(" ", n1Pos);
+      if (endPos > n1Pos + 3) {
+        nomeG1 = req.substring(n1Pos + 3, endPos);
+        nomeG1.replace("+", " ");
+        nomeG1.replace("%20", " ");
+        nomeG1.trim();
+        if (nomeG1.length() == 0) nomeG1 = "G1";
+      }
+    }
+   
+    int n2Pos = req.indexOf("n2=");
+    if (n2Pos > 0) {
+      int endPos = req.indexOf("&", n2Pos);
+      if (endPos < 0) endPos = req.indexOf(" ", n2Pos);
+      if (endPos > n2Pos + 3) {
+        nomeG2 = req.substring(n2Pos + 3, endPos);
+        nomeG2.replace("+", " ");
+        nomeG2.replace("%20", " ");
+        nomeG2.trim();
+        if (nomeG2.length() == 0) nomeG2 = "G2";
+      }
+    }
+
+    // Pronti iniziali
+    if (req.indexOf("p1=1") > 0) g1Pronto = true;
+    if (req.indexOf("p2=1") > 0) g2Pronto = true;
+
+    // Risposte (solo durante domanda attiva)
+    if (giocoAvviato && !mostraRisultati && !giocoTerminato) {
+      int v1Pos = req.indexOf("v1=");
+      if (v1Pos > 0 && !g1Risposto) {
+        int endPos = req.indexOf("&", v1Pos);
+        if (endPos < 0) endPos = req.indexOf(" ", v1Pos);
+        if (endPos > v1Pos + 3) {
+          String r = req.substring(v1Pos + 3, endPos);
+          r.toLowerCase();
+          r.replace("+", " ");
+          r.replace("%20", " ");
+          r.trim();
+          if (r == database[domandaCorrente].risposta) {
+            puntiG1 += calcolaPunti();
+          }
+          g1Risposto = true;
+        }
+      }
+
+      int v2Pos = req.indexOf("v2=");
+      if (v2Pos > 0 && !g2Risposto) {
+        int endPos = req.indexOf("&", v2Pos);
+        if (endPos < 0) endPos = req.indexOf(" ", v2Pos);
+        if (endPos > v2Pos + 3) {
+          String r = req.substring(v2Pos + 3, endPos);
+          r.toLowerCase();
+          r.replace("+", " ");
+          r.replace("%20", " ");
+          r.trim();
+          if (r == database[domandaCorrente].risposta) {
+            puntiG2 += calcolaPunti();
+          }
+          g2Risposto = true;
+        }
+      }
+    }
+
+    // Avvio gioco quando entrambi pronti
+    if (g1Pronto && g2Pronto && !giocoAvviato && !giocoTerminato) {
+      giocoAvviato = true;
+      nuovaDomanda();
+    }
+
+    // Determina quale giocatore
+    int g = (req.indexOf("/g1") >= 0) ? 1 : 2;
+    inviaPagina(client, g);
+   
+    delay(1);
+    client.stop();
+  }
+}
+
